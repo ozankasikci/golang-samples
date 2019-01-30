@@ -28,14 +28,16 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestMainFunc(t *testing.T) {
-	wt := webtest.New(t, "localhost:8080")
+// This function verifies compilation occurs without error.
+// It may not be possible to run the application without
+// satisfying appengine environmental dependencies such as
+// the presence of a GCE metadata server.
+func TestBuildable(t *testing.T) {
 	m := testutil.BuildMain(t)
 	defer m.Cleanup()
-	m.Run(nil, func() {
-		wt.WaitForNet()
-		bodyContains(t, wt, "/", "No books found")
-	})
+	if !m.Built() {
+		t.Fatal("failed to compile application.")
+	}
 }
 
 func TestNoBooks(t *testing.T) {
@@ -81,7 +83,6 @@ func TestEditBook(t *testing.T) {
 	m := multipart.NewWriter(&body)
 	m.WriteField("title", "simpsons")
 	m.WriteField("author", "homer")
-	m.CreateFormFile("image", "")
 	m.Close()
 
 	resp, err := wt.Post(bookPath, "multipart/form-data; boundary="+m.Boundary(), &body)
@@ -109,7 +110,6 @@ func TestAddAndDelete(t *testing.T) {
 	m := multipart.NewWriter(&body)
 	m.WriteField("title", "simpsons")
 	m.WriteField("author", "homer")
-	m.CreateFormFile("image", "")
 	m.Close()
 
 	resp, err := wt.Post(bookPath, "multipart/form-data; boundary="+m.Boundary(), &body)
@@ -118,7 +118,7 @@ func TestAddAndDelete(t *testing.T) {
 	}
 
 	gotPath := resp.Request.URL.Path
-	if wantPrefix := "/books/"; !strings.HasPrefix(gotPath, wantPrefix) {
+	if wantPrefix := "/books"; !strings.HasPrefix(gotPath, wantPrefix) {
 		t.Fatalf("redirect: got %q, want prefix %q", gotPath, wantPrefix)
 	}
 

@@ -5,8 +5,10 @@
 // Command simpleapp queries the Stack Overflow public dataset in Google BigQuery.
 package main
 
+// [START bigquery_simple_app_all]
 // [START bigquery_simple_app_deps]
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -14,8 +16,6 @@ import (
 
 	"cloud.google.com/go/bigquery"
 	"google.golang.org/api/iterator"
-
-	"golang.org/x/net/context"
 )
 
 // [END bigquery_simple_app_deps]
@@ -47,6 +47,7 @@ func query(proj string) (*bigquery.RowIterator, error) {
 	}
 	// [END bigquery_simple_app_client]
 
+	// [START bigquery_simple_app_query]
 	query := client.Query(
 		`SELECT
 			CONCAT(
@@ -58,6 +59,7 @@ func query(proj string) (*bigquery.RowIterator, error) {
 		ORDER BY view_count DESC
 		LIMIT 10;`)
 	return query.Read(ctx)
+	// [END bigquery_simple_app_query]
 }
 
 // [START bigquery_simple_app_print]
@@ -83,3 +85,4 @@ func printResults(w io.Writer, iter *bigquery.RowIterator) error {
 }
 
 // [END bigquery_simple_app_print]
+// [END bigquery_simple_app_all]

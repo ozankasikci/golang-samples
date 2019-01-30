@@ -3,17 +3,15 @@
 // license that can be found in the LICENSE file.
 
 // [START intro]
+
 package counter
 
 import (
 	"html/template"
 	"net/http"
 
-	"golang.org/x/net/context"
-
 	"google.golang.org/appengine"
 	"google.golang.org/appengine/datastore"
-	"google.golang.org/appengine/delay"
 	"google.golang.org/appengine/log"
 	"google.golang.org/appengine/taskqueue"
 )
@@ -81,23 +79,3 @@ const handlerHTML = `
 `
 
 // [END intro]
-
-func example() {
-	var ctx context.Context
-	var t *taskqueue.Task
-	_ = t
-
-	// [START deferred_tasks]
-	var expensiveFunc = delay.Func("some-arbitrary-key", func(ctx context.Context, a string, b int) {
-		// do something expensive!
-	})
-
-	// Somewhere else
-	expensiveFunc.Call(ctx, "Hello, world!", 42)
-	// [END deferred_tasks]
-
-	// [START URL_endpoints]
-	t = &taskqueue.Task{Path: "/path/to/my/worker"}
-	t = &taskqueue.Task{Path: "/path?a=b&c=d", Method: "GET"}
-	// [END URL_endpoints]
-}

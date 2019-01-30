@@ -6,7 +6,11 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"fmt"
+	"io/ioutil"
 	"log"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -14,11 +18,17 @@ import (
 	"google.golang.org/api/iterator"
 
 	"cloud.google.com/go/storage"
-	"golang.org/x/net/context"
 
 	"github.com/GoogleCloudPlatform/golang-samples/internal/testutil"
 )
 
+func TestMain(m *testing.M) {
+	// These functions are noisy.
+	log.SetOutput(ioutil.Discard)
+	s := m.Run()
+	log.SetOutput(os.Stderr)
+	os.Exit(s)
+}
 func TestObjects(t *testing.T) {
 	tc := testutil.SystemTest(t)
 	ctx := context.Background()
@@ -173,6 +183,113 @@ func TestObjects(t *testing.T) {
 	})
 }
 
+func TestKMSObjects(t *testing.T) {
+	tc := testutil.SystemTest(t)
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	keyRingID := os.Getenv("GOLANG_SAMPLES_KMS_KEYRING")
+	cryptoKeyID := os.Getenv("GOLANG_SAMPLES_KMS_CRYPTOKEY")
+	if keyRingID == "" || cryptoKeyID == "" {
+		t.Skip("GOLANG_SAMPLES_KMS_KEYRING and GOLANG_SAMPLES_KMS_CRYPTOKEY must be set")
+	}
+
+	var (
+		bucket    = tc.ProjectID + "-samples-object-bucket-1"
+		dstBucket = tc.ProjectID + "-samples-object-bucket-2"
+
+		object1 = "foo.txt"
+	)
+
+	cleanBucket(t, ctx, client, tc.ProjectID, bucket)
+	cleanBucket(t, ctx, client, tc.ProjectID, dstBucket)
+
+	kmsKeyName := fmt.Sprintf("projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s", tc.ProjectID, "global", keyRingID, cryptoKeyID)
+
+	if err := writeWithKMSKey(client, bucket, object1, kmsKeyName); err != nil {
+		t.Errorf("cannot write a KMS encrypted object: %v", err)
+	}
+}
+
+func TestObjectBucketLock(t *testing.T) {
+	tc := testutil.SystemTest(t)
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var (
+		bucketName = tc.ProjectID + "-retent-samples-object-bucket"
+
+		objectName = "foo.txt"
+
+		retentionPeriod = 5 * time.Second
+	)
+
+	cleanBucket(t, ctx, client, tc.ProjectID, bucketName)
+	bucket := client.Bucket(bucketName)
+
+	if err := write(client, bucketName, objectName); err != nil {
+		t.Fatalf("write(%q): %v", objectName, err)
+	}
+	if _, err := bucket.Update(ctx, storage.BucketAttrsToUpdate{
+		RetentionPolicy: &storage.RetentionPolicy{
+			RetentionPeriod: retentionPeriod,
+		},
+	}); err != nil {
+		t.Errorf("unable to set retention policy (%q): %v", bucketName, err)
+	}
+	if err := setEventBasedHold(client, bucketName, objectName); err != nil {
+		t.Errorf("unable to set event-based hold (%q/%q): %v", bucketName, objectName, err)
+	}
+	oAttrs, err := attrs(client, bucketName, objectName)
+	if err != nil {
+		t.Errorf("cannot get object metadata: %v", err)
+	}
+	if !oAttrs.EventBasedHold {
+		t.Errorf("event-based hold is not enabled")
+	}
+	if err := releaseEventBasedHold(client, bucketName, objectName); err != nil {
+		t.Errorf("unable to set event-based hold (%q/%q): %v", bucketName, objectName, err)
+	}
+	oAttrs, err = attrs(client, bucketName, objectName)
+	if err != nil {
+		t.Errorf("cannot get object metadata: %v", err)
+	}
+	if oAttrs.EventBasedHold {
+		t.Errorf("event-based hold is not disabled")
+	}
+	if _, err := bucket.Update(ctx, storage.BucketAttrsToUpdate{
+		RetentionPolicy: &storage.RetentionPolicy{},
+	}); err != nil {
+		t.Errorf("unable to remove retention policy (%q): %v", bucketName, err)
+	}
+	if err := setTemporaryHold(client, bucketName, objectName); err != nil {
+		t.Errorf("unable to set temporary hold (%q/%q): %v", bucketName, objectName, err)
+	}
+	oAttrs, err = attrs(client, bucketName, objectName)
+	if err != nil {
+		t.Errorf("cannot get object metadata: %v", err)
+	}
+	if !oAttrs.TemporaryHold {
+		t.Errorf("temporary hold is not disabled")
+	}
+	if err := releaseTemporaryHold(client, bucketName, objectName); err != nil {
+		t.Errorf("unable to release temporary hold (%q/%q): %v", bucketName, objectName, err)
+	}
+	oAttrs, err = attrs(client, bucketName, objectName)
+	if err != nil {
+		t.Errorf("cannot get object metadata: %v", err)
+	}
+	if oAttrs.TemporaryHold {
+		t.Errorf("temporary hold is not disabled")
+	}
+}
+
 // cleanBucket ensures there's a fresh bucket with a given name, deleting the existing bucket if it already exists.
 func cleanBucket(t *testing.T, ctx context.Context, client *storage.Client, projectID, bucket string) {
 	b := client.Bucket(bucket)
@@ -186,6 +303,14 @@ func cleanBucket(t *testing.T, ctx context.Context, client *storage.Client, proj
 			}
 			if err != nil {
 				t.Fatalf("Bucket.Objects(%q): %v", bucket, err)
+			}
+			if attrs.EventBasedHold || attrs.TemporaryHold {
+				if _, err := b.Object(attrs.Name).Update(ctx, storage.ObjectAttrsToUpdate{
+					TemporaryHold:  false,
+					EventBasedHold: false,
+				}); err != nil {
+					t.Fatalf("Bucket(%q).Object(%q).Update: %v", bucket, attrs.Name, err)
+				}
 			}
 			if err := b.Object(attrs.Name).Delete(ctx); err != nil {
 				t.Fatalf("Bucket(%q).Object(%q).Delete: %v", bucket, attrs.Name, err)

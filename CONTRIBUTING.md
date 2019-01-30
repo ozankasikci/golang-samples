@@ -1,6 +1,7 @@
 # Contributing
 
 1. Sign one of the contributor license agreements below.
+1. [Install Go](https://golang.org/doc/install)
 1. Get the package:
 
     `go get -d github.com/GoogleCloudPlatform/golang-samples`
@@ -14,15 +15,30 @@
 1. Make changes, commit to your fork.
 1. Send a pull request with your changes.
 
+# Formatting
+
+All code must be formatted with `gofmt` (with the latest Go version) and pass
+`go vet`.
+
 # Testing
+
+Tests are required for all samples. When writing a pull request, be sure to
+write and run the tests in any modified directories.
 
 ## Running system tests
 
-Set the `GOLANG_SAMPLES_PROJECT_ID` environment variable to a suitable test project.
+1. Set the `GOLANG_SAMPLES_PROJECT_ID` environment variable to a suitable test project.
+1. Ensure you are logged in using `gcloud login` or set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to the path of your credentials file.
+   Tests are authenticated using [Application Default Credentials](https://developers.google.com/identity/protocols/application-default-credentials).
+1. Install the test dependencies:
 
-Tests are authenticated using [Application Default Credentials](https://developers.google.com/identity/protocols/application-default-credentials).
+    `go get -t -d github.com/GoogleCloudPlatform/golang-samples/...`
+1. Run the tests:
 
-Ensure you are logged in using `gcloud login` or set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to the path of your credentials file.
+    `go test github.com/GoogleCloudPlatform/golang-samples/...`
+
+Note: You may want to `cd` to the directory you're modifying and run
+`go test -v ./...` to avoid running every test in the repo.
 
 ## Contributor License Agreements
 

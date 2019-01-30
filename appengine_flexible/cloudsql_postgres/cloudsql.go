@@ -2,6 +2,10 @@
 // Use of this source code is governed by the Apache 2.0
 // license that can be found in the LICENSE file.
 
+// +build go1.8
+
+// [START gae_flex_postgres_app]
+
 // Sample cloudsql demonstrates usage of Cloud SQL from App Engine flexible environment.
 package main
 
@@ -107,3 +111,5 @@ func queryVisits(limit int64) ([]visit, error) {
 
 	return visits, rows.Err()
 }
+
+// [END gae_flex_postgres_app]

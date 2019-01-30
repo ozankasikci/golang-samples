@@ -2,16 +2,16 @@
 // Use of this source code is governed by the Apache 2.0
 // license that can be found in the LICENSE file.
 
-// [START bigquery_datatransfer_quickstart]
+// [START bigquerydatatransfer_quickstart]
 
 // Sample bigquery-quickstart creates a Google BigQuery dataset.
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 
-	"golang.org/x/net/context"
 	"google.golang.org/api/iterator"
 
 	// Imports the BigQuery Data Transfer client package.
@@ -51,4 +51,4 @@ func main() {
 	}
 }
 
-// [END bigquery_datatransfer_quickstart]
+// [END bigquerydatatransfer_quickstart]

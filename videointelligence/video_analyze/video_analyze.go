@@ -5,16 +5,17 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
 
 	video "cloud.google.com/go/videointelligence/apiv1"
-	videopb "google.golang.org/genproto/googleapis/cloud/videointelligence/v1"
-
 	"github.com/golang/protobuf/ptypes"
-	"golang.org/x/net/context"
+	videopb "google.golang.org/genproto/googleapis/cloud/videointelligence/v1"
 )
+
+// [START video_analyze_labels]
 
 func label(w io.Writer, file string) error {
 	ctx := context.Background()
@@ -68,6 +69,8 @@ func label(w io.Writer, file string) error {
 
 	return nil
 }
+
+// [END video_analyze_labels]
 
 func shotChange(w io.Writer, file string) error {
 	ctx := context.Background()
@@ -144,3 +147,68 @@ func explicitContent(w io.Writer, file string) error {
 
 	return nil
 }
+
+// [START video_analyze_speech_transcription]
+
+func speechTranscription(w io.Writer, file string) error {
+	ctx := context.Background()
+	client, err := video.NewClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	fileBytes, err := ioutil.ReadFile(file)
+	if err != nil {
+		return err
+	}
+
+	op, err := client.AnnotateVideo(ctx, &videopb.AnnotateVideoRequest{
+		Features: []videopb.Feature{
+			videopb.Feature_SPEECH_TRANSCRIPTION,
+		},
+		VideoContext: &videopb.VideoContext{
+			SpeechTranscriptionConfig: &videopb.SpeechTranscriptionConfig{
+				LanguageCode:               "en-US",
+				EnableAutomaticPunctuation: true,
+			},
+		},
+		InputContent: fileBytes,
+	})
+	if err != nil {
+		return err
+	}
+	resp, err := op.Wait(ctx)
+	if err != nil {
+		return err
+	}
+
+	// A single video was processed. Get the first result.
+	result := resp.AnnotationResults[0]
+
+	for _, transcription := range result.SpeechTranscriptions {
+		// The number of alternatives for each transcription is limited by
+		// SpeechTranscriptionConfig.MaxAlternatives.
+		// Each alternative is a different possible transcription
+		// and has its own confidence score.
+		for _, alternative := range transcription.GetAlternatives() {
+			fmt.Fprintf(w, "Alternative level information:\n")
+			fmt.Fprintf(w, "\tTranscript: %v\n", alternative.GetTranscript())
+			fmt.Fprintf(w, "\tConfidence: %v\n", alternative.GetConfidence())
+
+			fmt.Fprintf(w, "Word level information:\n")
+			for _, wordInfo := range alternative.GetWords() {
+				startTime := wordInfo.GetStartTime()
+				endTime := wordInfo.GetEndTime()
+				fmt.Fprintf(w, "\t%4.1f - %4.1f: %v (speaker %v)\n",
+					float64(startTime.GetSeconds())+float64(startTime.GetNanos())*1e-9, // start as seconds
+					float64(endTime.GetSeconds())+float64(endTime.GetNanos())*1e-9,     // end as seconds
+					wordInfo.GetWord(),
+					wordInfo.GetSpeakerTag())
+			}
+		}
+	}
+
+	return nil
+}
+
+// [END video_analyze_speech_transcription]

@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,13 +21,9 @@ import (
 	"cloud.google.com/go/pubsub"
 	"cloud.google.com/go/storage"
 
-	"golang.org/x/net/context"
-
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	uuid "github.com/satori/go.uuid"
-
-	"google.golang.org/appengine"
 
 	"github.com/GoogleCloudPlatform/golang-samples/getting-started/bookshelf"
 )
@@ -39,8 +36,12 @@ var (
 )
 
 func main() {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
 	registerHandlers()
-	appengine.Main()
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", port), nil))
 }
 
 func registerHandlers() {
@@ -216,6 +217,8 @@ func uploadFileFromForm(r *http.Request) (url string, err error) {
 
 	ctx := context.Background()
 	w := bookshelf.StorageBucket.Object(name).NewWriter(ctx)
+
+	// Warning: storage.AllUsers gives public read access to anyone.
 	w.ACL = []storage.ACLRule{{Entity: storage.AllUsers, Role: storage.RoleReader}}
 	w.ContentType = fh.Header.Get("Content-Type")
 

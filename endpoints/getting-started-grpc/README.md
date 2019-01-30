@@ -41,21 +41,12 @@ $ go run client/main.go
     gcloud endpoints services deploy out.pb api_config.yaml
     ```
 
-    Your config ID should be printed out, it looks like `2017-03-30r0`.
-    Take a note of it, you'll need it later.
-
-    You can list the config IDs using this command:
-
-    ```bash
-    gcloud endpoints configs list --service hellogrpc.endpoints.YOUR_PROJECT_ID.cloud.goog
-    ```
-
 ## Building the server's Docker container
 
 Build and tag your gRPC server, storing it in your private container registry:
 
 ```bash
-gcloud container builds submit --tag gcr.io/YOUR_PROJECT_ID/go-grpc-hello:1.0 .
+gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/go-grpc-hello:1.0 .
 ```
 
 ## Deploy to GCE or GKE
@@ -65,16 +56,15 @@ gcloud container builds submit --tag gcr.io/YOUR_PROJECT_ID/go-grpc-hello:1.0 .
 1. Create an instance and SSH into it:
 
     ```bash
-    gcloud compute instances create grpc-host --image-family gci-stable --image-project google-containers --tags=http-server
+    gcloud compute instances create grpc-host --image-family cos-stable --image-project cos-cloud --tags=http-server
     gcloud compute ssh grpc-host
     ```
 
-1. Set some environment variables (you'll need to manually set the service config ID):
+1. Set some environment variables:
 
     ```bash
     GOOGLE_CLOUD_PROJECT=$(curl -s "http://metadata.google.internal/computeMetadata/v1/project/project-id" -H "Metadata-Flavor: Google")
     SERVICE_NAME=hellogrpc.endpoints.${GOOGLE_CLOUD_PROJECT}.cloud.goog
-    SERVICE_CONFIG_ID=<Your Config ID>
     ```
 
 1. Pull your credentials to access your private container registry:
@@ -99,7 +89,7 @@ gcloud container builds submit --tag gcr.io/YOUR_PROJECT_ID/go-grpc-hello:1.0 .
         --link=grpc-hello:grpc-hello \
         gcr.io/endpoints-release/endpoints-runtime:1 \
         --service=${SERVICE_NAME} \
-        --version=${SERVICE_CONFIG_ID} \
+        --rollout_strategy=managed \
         --http2_port=9000 \
         --backend=grpc://grpc-hello:50051
     ```
@@ -116,7 +106,7 @@ gcloud container builds submit --tag gcr.io/YOUR_PROJECT_ID/go-grpc-hello:1.0 .
 
 If you haven't got a cluster, first [create one](https://cloud.google.com/kubernetes-engine/docs/how-to/creating-a-container-cluster).
 
-1. Edit `deployment.yaml`. Replace `<YOUR_PROJECT_ID>` and `<SERVICE_CONFIG_ID>`.
+1. Edit `deployment.yaml`. Replace `<YOUR_PROJECT_ID>`.
 
 1. Create the deployment and service:
 

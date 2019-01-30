@@ -5,52 +5,74 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"io/ioutil"
+	"log"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/GoogleCloudPlatform/golang-samples/internal/testutil"
 
 	"cloud.google.com/go/storage"
-	"golang.org/x/net/context"
 )
 
-var bucketName = fmt.Sprintf("golang-example-buckets-%d", time.Now().Unix())
+var (
+	storageClient *storage.Client
+	bucketName    string
+)
 
-func setup(t *testing.T) *storage.Client {
+func TestMain(m *testing.M) {
+	// These functions are noisy.
+	log.SetOutput(ioutil.Discard)
+	s := m.Run()
+	log.SetOutput(os.Stderr)
+	os.Exit(s)
+}
+
+func setup(t *testing.T) {
+	tc := testutil.SystemTest(t)
+
 	ctx := context.Background()
-
-	client, err := storage.NewClient(ctx)
+	var err error
+	storageClient, err = storage.NewClient(ctx)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
-	return client
+
+	bucketName = tc.ProjectID + "-storage-buckets-tests"
 }
 
 func TestCreate(t *testing.T) {
 	tc := testutil.SystemTest(t)
-	c := setup(t)
-	if err := create(c, tc.ProjectID, bucketName); err != nil {
+	setup(t)
+
+	// Clean up bucket before running tests.
+	deleteBucket(storageClient, bucketName)
+	if err := create(storageClient, tc.ProjectID, bucketName); err != nil {
 		t.Fatalf("failed to create bucket (%q): %v", bucketName, err)
 	}
 }
 
 func TestCreateWithAttrs(t *testing.T) {
 	tc := testutil.SystemTest(t)
-	c := setup(t)
 	name := bucketName + "-attrs"
-	if err := createWithAttrs(c, tc.ProjectID, name); err != nil {
-		t.Fatalf("failed to create bucket (%q): %v", bucketName, err)
+	// Clean up bucket before running test.
+	deleteBucket(storageClient, name)
+	if err := createWithAttrs(storageClient, tc.ProjectID, name); err != nil {
+		t.Fatalf("failed to create bucket (%q): %v", name, err)
 	}
-	if err := delete(c, name); err != nil {
-		t.Fatalf("failed to delete bucket (%q): %v", bucketName, err)
+	if err := deleteBucket(storageClient, name); err != nil {
+		t.Fatalf("failed to delete bucket (%q): %v", name, err)
 	}
 }
 
 func TestList(t *testing.T) {
 	tc := testutil.SystemTest(t)
-	c := setup(t)
-	buckets, err := list(c, tc.ProjectID)
+	setup(t)
+
+	buckets, err := list(storageClient, tc.ProjectID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,39 +94,125 @@ outer:
 
 func TestIAM(t *testing.T) {
 	testutil.SystemTest(t)
-	c := setup(t)
+	setup(t)
 
-	if _, err := getPolicy(c, bucketName); err != nil {
+	if _, err := getPolicy(storageClient, bucketName); err != nil {
 		t.Errorf("getPolicy: %#v", err)
 	}
-	if err := addUser(c, bucketName); err != nil {
+	if err := addUser(storageClient, bucketName); err != nil {
 		t.Errorf("addUser: %v", err)
 	}
-	if err := removeUser(c, bucketName); err != nil {
+	if err := removeUser(storageClient, bucketName); err != nil {
 		t.Errorf("removeUser: %v", err)
 	}
 }
 
 func TestRequesterPays(t *testing.T) {
 	testutil.SystemTest(t)
-	c := setup(t)
+	setup(t)
 
-	if err := enableRequesterPays(c, bucketName); err != nil {
-		t.Errorf("enableRequesterPay: %#v", err)
+	if err := enableRequesterPays(storageClient, bucketName); err != nil {
+		t.Errorf("enableRequesterPays: %#v", err)
 	}
-	if err := disableRequesterPays(c, bucketName); err != nil {
-		t.Errorf("enableRequesterPay: %#v", err)
+	if err := disableRequesterPays(storageClient, bucketName); err != nil {
+		t.Errorf("disableRequesterPays: %#v", err)
 	}
-	if err := checkRequesterPays(c, bucketName); err != nil {
-		t.Errorf("enableRequesterPay: %#v", err)
+	if err := checkRequesterPays(storageClient, bucketName); err != nil {
+		t.Errorf("checkRequesterPays: %#v", err)
+	}
+}
+
+func TestKMS(t *testing.T) {
+	tc := testutil.SystemTest(t)
+	setup(t)
+
+	keyRingID := os.Getenv("GOLANG_SAMPLES_KMS_KEYRING")
+	cryptoKeyID := os.Getenv("GOLANG_SAMPLES_KMS_CRYPTOKEY")
+
+	if keyRingID == "" || cryptoKeyID == "" {
+		t.Skip("GOLANG_SAMPLES_KMS_KEYRING and GOLANG_SAMPLES_KMS_CRYPTOKEY must be set")
+	}
+
+	kmsKeyName := fmt.Sprintf("projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s", tc.ProjectID, "global", keyRingID, cryptoKeyID)
+	if err := setDefaultKMSkey(storageClient, bucketName, kmsKeyName); err != nil {
+		t.Fatalf("failed to enable default kms key (%q): %v", bucketName, err)
+	}
+}
+
+func TestBucketLock(t *testing.T) {
+	tc := testutil.SystemTest(t)
+	setup(t)
+
+	retentionPeriod := 5 * time.Second
+
+	if err := setRetentionPolicy(storageClient, bucketName, retentionPeriod); err != nil {
+		t.Fatalf("failed to set retention policy (%q): %v", bucketName, err)
+	}
+	attrs, err := getRetentionPolicy(storageClient, bucketName)
+	if err != nil {
+		t.Fatalf("failed to get retention policy (%q): %v", bucketName, err)
+	}
+	if attrs.RetentionPolicy.RetentionPeriod != retentionPeriod {
+		t.Fatalf("retention period is not the expected value (%q): %v", retentionPeriod, attrs.RetentionPolicy.RetentionPeriod)
+	}
+	if err := enableDefaultEventBasedHold(storageClient, bucketName); err != nil {
+		t.Fatalf("failed to enable default event-based hold (%q): %v", bucketName, err)
+	}
+	attrs, err = getDefaultEventBasedHold(storageClient, bucketName)
+	if err != nil {
+		t.Fatalf("failed to get default event-based hold (%q): %v", bucketName, err)
+	}
+	if !attrs.DefaultEventBasedHold {
+		t.Fatalf("default event-based hold was not enabled")
+	}
+	if err := disableDefaultEventBasedHold(storageClient, bucketName); err != nil {
+		t.Fatalf("failed to disable event-based hold (%q): %v", bucketName, err)
+	}
+	attrs, err = getDefaultEventBasedHold(storageClient, bucketName)
+	if err != nil {
+		t.Fatalf("failed to get default event-based hold (%q): %v", bucketName, err)
+	}
+	if attrs.DefaultEventBasedHold {
+		t.Fatalf("default event-based hold was not disabled")
+	}
+	if err := removeRetentionPolicy(storageClient, bucketName); err != nil {
+		t.Fatalf("failed to remove retention policy (%q): %v", bucketName, err)
+	}
+	attrs, err = getRetentionPolicy(storageClient, bucketName)
+	if err != nil {
+		t.Fatalf("failed to get retention policy (%q): %v", bucketName, err)
+	}
+	if attrs.RetentionPolicy != nil {
+		t.Fatalf("retention period to not be set")
+	}
+	if err := setRetentionPolicy(storageClient, bucketName, retentionPeriod); err != nil {
+		t.Fatalf("failed to set retention policy (%q): %v", bucketName, err)
+	}
+	testutil.Retry(t, 10, time.Second, func(r *testutil.R) {
+		if err := lockRetentionPolicy(storageClient, bucketName); err != nil {
+			r.Errorf("failed to lock retention policy (%q): %v", bucketName, err)
+		}
+		attrs, err := getRetentionPolicy(storageClient, bucketName)
+		if err != nil {
+			r.Errorf("failed to check if retention policy is locked (%q): %v", bucketName, err)
+		}
+		if !attrs.RetentionPolicy.IsLocked {
+			r.Errorf("retention policy is not locked")
+		}
+	})
+	time.Sleep(5 * time.Second)
+	deleteBucket(storageClient, bucketName)
+	time.Sleep(5 * time.Second)
+	if err := create(storageClient, tc.ProjectID, bucketName); err != nil {
+		t.Fatalf("failed to create bucket (%q): %v", bucketName, err)
 	}
 }
 
 func TestDelete(t *testing.T) {
 	testutil.SystemTest(t)
+	setup(t)
 
-	c := setup(t)
-	if err := delete(c, bucketName); err != nil {
+	if err := deleteBucket(storageClient, bucketName); err != nil {
 		t.Fatalf("failed to delete bucket (%q): %v", bucketName, err)
 	}
 }

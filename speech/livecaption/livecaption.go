@@ -11,20 +11,20 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
 	"os"
 
 	speech "cloud.google.com/go/speech/apiv1"
-	"golang.org/x/net/context"
 	speechpb "google.golang.org/genproto/googleapis/cloud/speech/v1"
 )
 
 func main() {
 	ctx := context.Background()
 
-	// [START speech_streaming_mic_recognize]
+	// [START speech_transcribe_streaming_mic]
 	client, err := speech.NewClient(ctx)
 	if err != nil {
 		log.Fatal(err)
@@ -53,6 +53,15 @@ func main() {
 		buf := make([]byte, 1024)
 		for {
 			n, err := os.Stdin.Read(buf)
+			if n > 0 {
+				if err := stream.Send(&speechpb.StreamingRecognizeRequest{
+					StreamingRequest: &speechpb.StreamingRecognizeRequest_AudioContent{
+						AudioContent: buf[:n],
+					},
+				}); err != nil {
+					log.Printf("Could not send audio: %v", err)
+				}
+			}
 			if err == io.EOF {
 				// Nothing else to pipe, close the stream.
 				if err := stream.CloseSend(); err != nil {
@@ -63,13 +72,6 @@ func main() {
 			if err != nil {
 				log.Printf("Could not read from stdin: %v", err)
 				continue
-			}
-			if err = stream.Send(&speechpb.StreamingRecognizeRequest{
-				StreamingRequest: &speechpb.StreamingRecognizeRequest_AudioContent{
-					AudioContent: buf[:n],
-				},
-			}); err != nil {
-				log.Printf("Could not send audio: %v", err)
 			}
 		}
 	}()
@@ -83,11 +85,15 @@ func main() {
 			log.Fatalf("Cannot stream results: %v", err)
 		}
 		if err := resp.Error; err != nil {
+			// Workaround while the API doesn't give a more informative error.
+			if err.Code == 3 || err.Code == 11 {
+				log.Print("WARNING: Speech recognition request exceeded limit of 60 seconds.")
+			}
 			log.Fatalf("Could not recognize: %v", err)
 		}
 		for _, result := range resp.Results {
 			fmt.Printf("Result: %+v\n", result)
 		}
 	}
-	// [END speech_streaming_mic_recognize]
+	// [END speech_transcribe_streaming_mic]
 }

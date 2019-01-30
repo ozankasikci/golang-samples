@@ -2,17 +2,17 @@
 // Use of this source code is governed by the Apache 2.0
 // license that can be found in the LICENSE file.
 
-// [START pubsub_quickstart]
+// [START pubsub_quickstart_create_topic]
+
 // Sample pubsub-quickstart creates a Google Cloud Pub/Sub topic.
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 
-	// Imports the Google Cloud Pub/Sub client package.
 	"cloud.google.com/go/pubsub"
-	"golang.org/x/net/context"
 )
 
 func main() {
@@ -28,7 +28,7 @@ func main() {
 	}
 
 	// Sets the name for the new topic.
-	topicName := "my-new-topic"
+	topicName := "my-topic"
 
 	// Creates the new topic.
 	topic, err := client.CreateTopic(ctx, topicName)
@@ -39,4 +39,4 @@ func main() {
 	fmt.Printf("Topic %v created.\n", topic)
 }
 
-// [END pubsub_quickstart]
+// [END pubsub_quickstart_create_topic]

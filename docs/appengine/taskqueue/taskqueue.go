@@ -6,9 +6,9 @@ package sample
 
 // [START tasks_within_transactions]
 import (
+	"context"
+	"net/http"
 	"net/url"
-
-	"golang.org/x/net/context"
 
 	"google.golang.org/appengine/datastore"
 	"google.golang.org/appengine/taskqueue"
@@ -17,7 +17,7 @@ import (
 func f(ctx context.Context) {
 	err := datastore.RunInTransaction(ctx, func(ctx context.Context) error {
 		t := taskqueue.NewPOSTTask("/worker", url.Values{
-		// ...
+			// ...
 		})
 		// Use the transaction's context when invoking taskqueue.Add.
 		_, err := taskqueue.Add(ctx, t, "")
@@ -49,4 +49,13 @@ func example() {
 	err = taskqueue.Delete(ctx, t, "queue1")
 	// [END deleting_tasks]
 	_ = err
+
+	// [START taskqueue_host]
+	h := http.Header{}
+	h.Add("Host", "versionHostname")
+	task := taskqueue.Task{
+		Header: h,
+	}
+	// [END taskqueue_host]
+	_ = task
 }

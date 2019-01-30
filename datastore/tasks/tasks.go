@@ -2,14 +2,13 @@
 // Use of this source code is governed by the Apache 2.0
 // license that can be found in the LICENSE file.
 
-// [START all]
-
 // A simple command-line task list manager to demonstrate using the
 // cloud.google.com/go/datastore package.
 package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -20,8 +19,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/datastore"
-
-	"golang.org/x/net/context"
 )
 
 func main() {
@@ -29,10 +26,10 @@ func main() {
 	if projID == "" {
 		log.Fatal(`You need to set the environment variable "DATASTORE_PROJECT_ID"`)
 	}
-	// [START build_service]
+	// [START datastore_build_service]
 	ctx := context.Background()
 	client, err := datastore.NewClient(ctx, projID)
-	// [END build_service]
+	// [END datastore_build_service]
 	if err != nil {
 		log.Fatalf("Could not create datastore client: %v", err)
 	}
@@ -107,7 +104,7 @@ func main() {
 	}
 }
 
-// [START add_entity]
+// [START datastore_add_entity]
 // Task is the model used to store tasks in the datastore.
 type Task struct {
 	Desc    string    `datastore:"description"`
@@ -127,9 +124,9 @@ func AddTask(ctx context.Context, client *datastore.Client, desc string) (*datas
 	return client.Put(ctx, key, task)
 }
 
-// [END add_entity]
+// [END datastore_add_entity]
 
-// [START update_entity]
+// [START datastore_update_entity]
 // MarkDone marks the task done with the given ID.
 func MarkDone(ctx context.Context, client *datastore.Client, taskID int64) error {
 	// Create a key using the given integer ID.
@@ -148,9 +145,9 @@ func MarkDone(ctx context.Context, client *datastore.Client, taskID int64) error
 	return err
 }
 
-// [END update_entity]
+// [END datastore_update_entity]
 
-// [START retrieve_entities]
+// [START datastore_retrieve_entities]
 // ListTasks returns all the tasks in ascending order of creation time.
 func ListTasks(ctx context.Context, client *datastore.Client) ([]*Task, error) {
 	var tasks []*Task
@@ -170,17 +167,16 @@ func ListTasks(ctx context.Context, client *datastore.Client) ([]*Task, error) {
 	return tasks, nil
 }
 
-// [END retrieve_entities]
+// [END datastore_retrieve_entities]
 
-// [START delete_entity]
+// [START datastore_delete_entity]
 // DeleteTask deletes the task with the given ID.
 func DeleteTask(ctx context.Context, client *datastore.Client, taskID int64) error {
 	return client.Delete(ctx, datastore.IDKey("Task", taskID, nil))
 }
 
-// [END delete_entity]
+// [END datastore_delete_entity]
 
-// [START format_results]
 // PrintTasks prints the tasks to the given writer.
 func PrintTasks(w io.Writer, tasks []*Task) {
 	// Use a tab writer to help make results pretty.
@@ -195,8 +191,6 @@ func PrintTasks(w io.Writer, tasks []*Task) {
 	}
 	tw.Flush()
 }
-
-// [END format_results]
 
 func usage() {
 	fmt.Print(`Usage:
@@ -220,5 +214,3 @@ func parseCmd(line string) (cmd, args string, n int64) {
 	}
 	return cmd, args, n
 }
-
-// [END all]

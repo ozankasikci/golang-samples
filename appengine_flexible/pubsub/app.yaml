@@ -4,8 +4,10 @@ env: flex
 automatic_scaling:
   min_num_instances: 1
 
-#[START env_variables]
+#[START gae_flex_pubsub_yaml]
 env_variables:
-  GOOGLE_CLOUD_PROJECT: your-project-id
   PUBSUB_TOPIC: your-topic
-#[END env_variables]
+  # This token is used to verify that requests originate from your
+  # application. It can be any sufficiently random string.
+  PUBSUB_VERIFICATION_TOKEN: your-token
+#[END gae_flex_pubsub_yaml]

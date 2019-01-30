@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -15,10 +16,6 @@ import (
 	"sync"
 
 	"cloud.google.com/go/pubsub"
-
-	"google.golang.org/appengine"
-
-	"golang.org/x/net/context"
 )
 
 var (
@@ -27,6 +24,9 @@ var (
 	// Messages received by this instance.
 	messagesMu sync.Mutex
 	messages   []string
+
+	// token is used to verify push requests.
+	token = mustGetenv("PUBSUB_VERIFICATION_TOKEN")
 )
 
 const maxMessages = 10
@@ -39,14 +39,34 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Create topic if it doesn't exist.
-	topic, _ = client.CreateTopic(ctx, mustGetenv("PUBSUB_TOPIC"))
+	topicName := mustGetenv("PUBSUB_TOPIC")
+	topic = client.Topic(topicName)
+
+	// Create the topic if it doesn't exist.
+	exists, err := topic.Exists(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if !exists {
+		log.Printf("Topic %v doesn't exist - creating it", topicName)
+		_, err = client.CreateTopic(ctx, topicName)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 
 	http.HandleFunc("/", listHandler)
 	http.HandleFunc("/pubsub/publish", publishHandler)
 	http.HandleFunc("/pubsub/push", pushHandler)
 
-	appengine.Main()
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+		log.Printf("Defaulting to port %s", port)
+	}
+
+	log.Printf("Listening on port %s", port)
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", port), nil))
 }
 
 func mustGetenv(k string) string {
@@ -67,6 +87,10 @@ type pushRequest struct {
 }
 
 func pushHandler(w http.ResponseWriter, r *http.Request) {
+	// Verify the token.
+	if r.URL.Query().Get("token") != token {
+		http.Error(w, "Bad token", http.StatusBadRequest)
+	}
 	msg := &pushRequest{}
 	if err := json.NewDecoder(r.Body).Decode(msg); err != nil {
 		http.Error(w, fmt.Sprintf("Could not decode body: %v", err), http.StatusBadRequest)
@@ -120,12 +144,10 @@ var tmpl = template.Must(template.New("").Parse(`<!DOCTYPE html>
       {{ end }}
       </ul>
     </div>
-    <!-- [START form] -->
     <form method="post" action="/pubsub/publish">
       <textarea name="payload" placeholder="Enter message here"></textarea>
       <input type="submit">
     </form>
-    <!-- [END form] -->
     <p>Note: if the application is running across multiple instances, each
       instance will have its own list of messages.</p>
   </body>

@@ -7,23 +7,23 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
-
-	// [START imports]
-	"golang.org/x/net/context"
 
 	"cloud.google.com/go/iam"
 	"cloud.google.com/go/pubsub"
 	"google.golang.org/api/iterator"
-	// [END imports]
 )
 
 func main() {
 	ctx := context.Background()
-	// [START auth]
 	proj := os.Getenv("GOOGLE_CLOUD_PROJECT")
 	if proj == "" {
 		fmt.Fprintf(os.Stderr, "GOOGLE_CLOUD_PROJECT environment variable must be set.\n")
@@ -33,7 +33,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Could not create pubsub Client: %v", err)
 	}
-	// [END auth]
 
 	// List all the topics from the project.
 	fmt.Println("Listing all topics from the project:")
@@ -45,14 +44,19 @@ func main() {
 		fmt.Println(t)
 	}
 
-	const topic = "example-topic"
-	// Create a new topic called example-topic.
+	const topic = "my-topic"
+	// Create a new topic called my-topic.
 	if err := create(client, topic); err != nil {
 		log.Fatalf("Failed to create a topic: %v", err)
 	}
 
 	// Publish a text message on the created topic.
 	if err := publish(client, topic, "hello world!"); err != nil {
+		log.Fatalf("Failed to publish: %v", err)
+	}
+
+	// Publish 10 messages with asynchronous error handling.
+	if err := publishThatScales(client, topic, 10); err != nil {
 		log.Fatalf("Failed to publish: %v", err)
 	}
 
@@ -64,20 +68,20 @@ func main() {
 
 func create(client *pubsub.Client, topic string) error {
 	ctx := context.Background()
-	// [START create_topic]
+	// [START pubsub_create_topic]
 	t, err := client.CreateTopic(ctx, topic)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("Topic created: %v\n", t)
-	// [END create_topic]
+	// [END pubsub_create_topic]
 	return nil
 }
 
 func list(client *pubsub.Client) ([]*pubsub.Topic, error) {
 	ctx := context.Background()
 
-	// [START list_topics]
+	// [START pubsub_list_topics]
 	var topics []*pubsub.Topic
 
 	it := client.Topics(ctx)
@@ -93,13 +97,13 @@ func list(client *pubsub.Client) ([]*pubsub.Topic, error) {
 	}
 
 	return topics, nil
-	// [END list_topics]
+	// [END pubsub_list_topics]
 }
 
 func listSubscriptions(client *pubsub.Client, topicID string) ([]*pubsub.Subscription, error) {
 	ctx := context.Background()
 
-	// [START list_topic_subscriptions]
+	// [START pubsub_list_topic_subscriptions]
 	var subs []*pubsub.Subscription
 
 	it := client.Topic(topicID).Subscriptions(ctx)
@@ -113,25 +117,26 @@ func listSubscriptions(client *pubsub.Client, topicID string) ([]*pubsub.Subscri
 		}
 		subs = append(subs, sub)
 	}
-	// [END list_topic_subscriptions]
+	// [END pubsub_list_topic_subscriptions]
 	return subs, nil
 }
 
 func delete(client *pubsub.Client, topic string) error {
 	ctx := context.Background()
-	// [START delete_topic]
+	// [START pubsub_delete_topic]
 	t := client.Topic(topic)
 	if err := t.Delete(ctx); err != nil {
 		return err
 	}
 	fmt.Printf("Deleted topic: %v\n", t)
-	// [END delete_topic]
+	// [END pubsub_delete_topic]
 	return nil
 }
 
 func publish(client *pubsub.Client, topic, msg string) error {
 	ctx := context.Background()
-	// [START publish]
+	// [START pubsub_publish]
+	// [START pubsub_quickstart_publisher]
 	t := client.Topic(topic)
 	result := t.Publish(ctx, &pubsub.Message{
 		Data: []byte(msg),
@@ -143,13 +148,75 @@ func publish(client *pubsub.Client, topic, msg string) error {
 		return err
 	}
 	fmt.Printf("Published a message; msg ID: %v\n", id)
-	// [END publish]
+	// [END pubsub_publish]
+	// [END pubsub_quickstart_publisher]
+	return nil
+}
+
+func publishThatScales(client *pubsub.Client, topic string, n int) error {
+	ctx := context.Background()
+	// [START pubsub_publish_with_error_handling_that_scales]
+	var wg sync.WaitGroup
+	var totalErrors uint64
+	t := client.Topic(topic)
+
+	for i := 0; i < n; i++ {
+		result := t.Publish(ctx, &pubsub.Message{
+			Data: []byte("Message " + strconv.Itoa(i)),
+		})
+
+		wg.Add(1)
+		go func(i int, res *pubsub.PublishResult) {
+			defer wg.Done()
+			// The Get method blocks until a server-generated ID or
+			// an error is returned for the published message.
+			id, err := res.Get(ctx)
+			if err != nil {
+				// Error handling code can be added here.
+				log.Output(1, fmt.Sprintf("Failed to publish: %v", err))
+				atomic.AddUint64(&totalErrors, 1)
+				return
+			}
+			fmt.Printf("Published message %d; msg ID: %v\n", i, id)
+		}(i, result)
+	}
+
+	wg.Wait()
+
+	if totalErrors > 0 {
+		return errors.New(
+			fmt.Sprintf("%d of %d messages did not publish successfully",
+				totalErrors, n))
+	}
+	return nil
+	// [END pubsub_publish_with_error_handling_that_scales]
+}
+
+func publishCustomAttributes(client *pubsub.Client, topic string) error {
+	ctx := context.Background()
+	// [START pubsub_publish_custom_attributes]
+	t := client.Topic(topic)
+	result := t.Publish(ctx, &pubsub.Message{
+		Data: []byte("Hello world!"),
+		Attributes: map[string]string{
+			"origin":   "golang",
+			"username": "gcp",
+		},
+	})
+	// Block until the result is returned and a server-generated
+	// ID is returned for the published message.
+	id, err := result.Get(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Published message with custom attributes; msg ID: %v\n", id)
+	// [END pubsub_publish_custom_attributes]
 	return nil
 }
 
 func publishWithSettings(client *pubsub.Client, topic string, msg []byte) error {
 	ctx := context.Background()
-	// [START publish_settings]
+	// [START pubsub_publisher_batch_settings]
 	t := client.Topic(topic)
 	t.PublishSettings = pubsub.PublishSettings{
 		ByteThreshold:  5000,
@@ -164,13 +231,13 @@ func publishWithSettings(client *pubsub.Client, topic string, msg []byte) error 
 		return err
 	}
 	fmt.Printf("Published a message; msg ID: %v\n", id)
-	// [END publish_settings]
+	// [END pubsub_publisher_batch_settings]
 	return nil
 }
 
 func publishSingleGoroutine(client *pubsub.Client, topic string, msg []byte) error {
 	ctx := context.Background()
-	// [START publish_single_goroutine]
+	// [START pubsub_publisher_concurrency_control]
 	t := client.Topic(topic)
 	t.PublishSettings = pubsub.PublishSettings{
 		NumGoroutines: 1,
@@ -183,7 +250,7 @@ func publishSingleGoroutine(client *pubsub.Client, topic string, msg []byte) err
 		return err
 	}
 	fmt.Printf("Published a message; msg ID: %v\n", id)
-	// [END publish_single_goroutine]
+	// [END pubsub_publisher_concurrency_control]
 	return nil
 }
 

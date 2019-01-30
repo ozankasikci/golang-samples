@@ -14,10 +14,10 @@ import (
 	"google.golang.org/appengine"
 )
 
-// [START import]
+// [START gae_flex_mailjet_config]
 import "github.com/mailjet/mailjet-apiv3-go"
 
-// [END import]
+// [END gae_flex_mailjet_config]
 
 func main() {
 	http.HandleFunc("/send", sendEmail)
@@ -42,6 +42,7 @@ func mustGetenv(k string) string {
 	return v
 }
 
+// [START gae_flex_mailjet_send_email]
 func sendEmail(w http.ResponseWriter, r *http.Request) {
 	to := r.FormValue("to")
 	if to == "" {
@@ -49,25 +50,33 @@ func sendEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	m := &mailjet.InfoSendMail{
-		FromEmail: fromEmail,
-		FromName:  "App Engine Mailjet sample",
-		Subject:   "Your email flight plan!",
-		TextPart:  "Dear passenger, welcome to Mailjet! May the delivery force be with you!",
-		HTMLPart:  "<h3>Dear passenger, welcome to Mailjet!</h3><br/>May the delivery force be with you!",
-		Recipients: []mailjet.Recipient{
-			{
-				Email: to,
+	messagesInfo := []mailjet.InfoMessagesV31{
+		{
+			From: &mailjet.RecipientV31{
+				Email: fromEmail,
+				Name:  "Mailjet Pilot",
 			},
+			To: &mailjet.RecipientsV31{
+				mailjet.RecipientV31{
+					Email: to,
+					Name:  "passenger 1",
+				},
+			},
+			Subject:  "Your email flight plan!",
+			TextPart: "Dear passenger, welcome to Mailjet! May the delivery force be with you!",
+			HTMLPart: "<h3>Dear passenger, welcome to Mailjet!</h3><br />May the delivery force be with you!",
 		},
 	}
 
-	resp, err := mailjetClient.SendMail(m)
+	messages := mailjet.MessagesV31{Info: messagesInfo}
+	resp, err := mailjetClient.SendMailV31(&messages)
 	if err != nil {
 		msg := fmt.Sprintf("Could not send mail: %v", err)
 		http.Error(w, msg, 500)
 		return
 	}
 
-	fmt.Fprintf(w, "%d email(s) sent!", len(resp.Sent))
+	fmt.Fprintf(w, "%d email(s) sent!", len(resp.ResultsV31))
 }
+
+// [END gae_flex_mailjet_send_email]
